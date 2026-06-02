@@ -8,6 +8,7 @@ from concurrent.futures import FIRST_COMPLETED, ThreadPoolExecutor, wait
 
 from skillopt.model import chat_target
 from skillopt.envs.storyboard.evaluator import evaluate
+from skillopt.envs.storyboard.hard_metrics import compute_hard_metrics
 
 
 _USER_TEMPLATE = """\
@@ -79,20 +80,36 @@ def process_one(
         with open(os.path.join(pred_dir, "response.txt"), "w", encoding="utf-8") as f:
             f.write(response)
 
+        # Hard metrics (automated, used for gate)
+        hard_result = compute_hard_metrics(script_text, response, ground_truth_csv)
+        # LLM judge (soft signal for analyst)
         eval_result = evaluate(script_text, response, ground_truth_csv, timeout=exec_timeout)
-        result["hard"] = eval_result["hard"]
+
+        result["hard"] = hard_result["hard_score"]
         result["soft"] = eval_result["soft"]
         result["score"] = eval_result["score"]
         result["dimensions"] = eval_result["dimensions"]
         result["reasoning"] = eval_result["reasoning"]
+        result["hard_metrics"] = {
+            "shot_count_deviation": hard_result["shot_count_deviation"],
+            "cut_alignment_rate": hard_result["cut_alignment_rate"],
+            "shot_scale_edit_dist": hard_result["shot_scale_edit_dist"],
+            "hard_score": hard_result["hard_score"],
+        }
 
-        if not eval_result.get("parse_ok", True):
+        if not hard_result.get("parse_ok", True):
             result["fail_reason"] = "CSV parse failure"
-        elif eval_result["hard"] == 0:
-            result["fail_reason"] = f"Score {eval_result['score']:.1f}/10 below threshold (7)"
+        elif hard_result["hard_score"] < 0.5:
+            result["fail_reason"] = (
+                f"Hard metrics below threshold: "
+                f"count_dev={hard_result['shot_count_deviation']:.2f} "
+                f"cut_align={hard_result['cut_alignment_rate']:.2f} "
+                f"scale_edit={hard_result['shot_scale_edit_dist']:.2f}"
+            )
 
+        combined_eval = {**eval_result, "hard_metrics": hard_result}
         with open(os.path.join(pred_dir, "eval_result.json"), "w", encoding="utf-8") as f:
-            json.dump(eval_result, f, ensure_ascii=False, indent=2)
+            json.dump(combined_eval, f, ensure_ascii=False, indent=2)
 
     except Exception as e:  # noqa: BLE001
         result["fail_reason"] = f"error: {e}"
