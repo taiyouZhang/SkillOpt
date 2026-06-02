@@ -9,7 +9,7 @@ from concurrent.futures import FIRST_COMPLETED, ThreadPoolExecutor, wait
 from skillopt.model import chat_target
 from skillopt.envs.storyboard.evaluator import evaluate
 from skillopt.envs.storyboard.hard_metrics import compute_hard_metrics
-from skillopt.envs.storyboard.pipeline import run_pipeline
+from skillopt.envs.storyboard.pipeline import run_pipeline, decompose_skill
 
 
 def process_one(
@@ -43,7 +43,27 @@ def process_one(
         pred_dir = os.path.join(out_root, "predictions", item_id)
         os.makedirs(pred_dir, exist_ok=True)
 
-        if pipeline_mode == "multi_agent" and frozen_skills:
+        if pipeline_mode == "acp" and frozen_skills:
+            from skillopt.model.acp_backend import prepare_acp_workspace, run_acp_pipeline
+
+            optimizable_skills = decompose_skill(skill_content)
+            all_skills = {**frozen_skills, **optimizable_skills}
+            work_dir = os.path.join(pred_dir, "acp_workspace")
+            prepare_acp_workspace(
+                work_dir=work_dir,
+                script_text=script_text,
+                all_skills=all_skills,
+            )
+            response, _ = run_acp_pipeline(
+                script_text=script_text,
+                all_skills=all_skills,
+                work_dir=work_dir,
+                timeout=exec_timeout,
+            )
+            if not response.strip():
+                result["fail_reason"] = "acp pipeline returned empty response"
+                return result
+        elif pipeline_mode == "multi_agent" and frozen_skills:
             pipeline_result = run_pipeline(
                 script_text=script_text,
                 composite_skill=skill_content,

@@ -9,8 +9,10 @@ from skillopt.model import claude_backend as _claude
 from skillopt.model import minimax_backend as _minimax
 from skillopt.model import qwen_backend as _qwen
 from skillopt.model.backend_config import (  # noqa: F401
+    configure_acp_exec,
     configure_claude_code_exec,
     configure_codex_exec,
+    get_acp_exec_config,
     get_claude_code_exec_config,
     get_codex_exec_config,
     get_target_backend,
@@ -43,10 +45,14 @@ def set_backend(name: str | None) -> str:
         set_optimizer_backend("openai_chat")
         set_target_backend("codex_exec")
         return "codex"
-    if normalized in {"codex_exec", "claude_code_exec"}:
+    if normalized in {"codex_exec", "claude_code_exec", "acp_exec"}:
         set_optimizer_backend("openai_chat")
         set_target_backend(normalized)
         return normalized
+    if normalized in {"acp"}:
+        set_optimizer_backend("openai_chat")
+        set_target_backend("acp_exec")
+        return "acp_exec"
     if normalized in {"qwen", "qwen_chat"}:
         set_optimizer_backend("openai_chat")
         set_target_backend("qwen_chat")
