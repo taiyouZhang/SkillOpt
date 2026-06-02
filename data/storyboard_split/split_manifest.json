@@ -1,0 +1,10 @@
+{
+  "name": "storyboard",
+  "description": "Script-to-shots storyboard generation",
+  "splits": {
+    "train": 5,
+    "val": 1,
+    "test": 2
+  },
+  "total": 8
+}

@@ -1,0 +1,8 @@
+[
+  {
+    "id": "ep6-p04",
+    "task_type": "storyboard",
+    "script_text": "（慢镜头）Evelyn转身，慢慢离开，身后彩纸飞舞，渣男恶女相拥。\n\nNick追上她，将她抱在怀里。\n\n> **NICK**\n> Evelyn!\n\nEvelyn在Nick怀里，泪水这才像决堤似的爆发。\n\n> **EVELYN**\n> Nick, what if it was really all in my head?\n\n**插入画面：第一、二集丧尸在大厅肆虐；Nick落入尸潮；Evelyn落入尸潮。**\n\n> **EVELYN (CONT'D)**\n> Of course. Zombies, time travel, none of it was real. I'm such a fool, Nick. I probably had too much to drink, and I imagined all that...Sophie was right. I am the girl who cried zombie...\n\nNick用力抓住Evelyn的肩膀。\n\n> **NICK**\n> Let's get out of here. You want to check the engine room for that attacker?\n\nEvelyn倏地抬起头，难以置信。\n\n> **EVELYN**\n> You...you believe me?\n\n> **NICK**\n> There's no reason not to...I've seen'em, zombies - I mean, *the infected. In their labs.*",
+    "ground_truth_csv": "分镜号,场景,画面内容,景别,拍摄角度,运镜,角色,台词\n37,,Evelyn转身离开，有话说不出来，后景是那对狗男女，Evelyn慢慢走入黑暗中，Nick这时来到了她的身旁，伸手抱住了她,FS,平,手持跟,,NICK：Evelyn!\n38,,Evelyn此刻才哭了出来，她看着Nick，说,MS关系,微俯,手持,,\"EVELYN：Nick, what if it was really all in my head?\"\n39,,闪回：镜头组：EP1和2的丧尸在大厅吃人的画面/鲜血四溅的画面/Nick落入了尸潮/Evelyn掉落尸潮,,,,,\n40,,Evelyn在Nick怀中哭着自我怀疑，声音颤抖哽咽,MS关系,微俯,手持,,\"EVELYN (CONT'D)Of course. Zombies, time travel, none of it was real. I'm such a fool, Nick. I probably had too much to drink, and I imagined all that...Sophie was right. I am the girl who cried zombie...\"\n41,,Nick看着怀里的Evelyn，有些皱着眉头，温柔地表情,MS关系,微仰,手持,,\n42,,Nick抓住了Evelyn的肩膀，认真地说,MFS双人,平,手持,,NICK：Let's get out of here. You want to check the engine room for that attacker?\n43,,Evelyn瞪大眼睛——Nick的话如同一道闪电击中她，表情从绝望转为震惊再到希望复燃，说,MS关系,微俯,手持,,EVELYN：You...you believe me?\n44,,Nick认真地看着Evelyn，看着下方略微思考，然后说,MFS双人,微侧,手持,,\"NICK *There's no reason not to....I've seen'em, zombies - *I mean, t he infect ed. In t heir labs.\""
+  }
+]

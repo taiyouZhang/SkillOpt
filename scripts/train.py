@@ -93,6 +93,11 @@ def _register_builtins() -> None:
         _ENV_REGISTRY["swebench"] = SWEBenchAdapter
     except ImportError:
         pass
+    try:
+        from skillopt.envs.storyboard.adapter import StoryboardAdapter
+        _ENV_REGISTRY["storyboard"] = StoryboardAdapter
+    except ImportError:
+        pass
 
 
 def get_adapter(cfg: dict):
