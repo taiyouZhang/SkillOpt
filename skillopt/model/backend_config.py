@@ -42,7 +42,6 @@ def _parse_int(value: str | None, default: int) -> int:
 
 ACP_EXEC_CLAUDE_PATH = os.environ.get("ACP_EXEC_CLAUDE_PATH", "claude")
 ACP_EXEC_TIMEOUT = _parse_int(os.environ.get("ACP_EXEC_TIMEOUT"), 900)
-ACP_EXEC_MAX_TURNS = _parse_int(os.environ.get("ACP_EXEC_MAX_TURNS"), 50)
 ACP_EXEC_PERMISSION_MODE = os.environ.get("ACP_EXEC_PERMISSION_MODE", "bypassPermissions")
 ACP_EXEC_MODEL = os.environ.get("ACP_EXEC_MODEL", "")
 
@@ -196,20 +195,16 @@ def configure_acp_exec(
     *,
     claude_path: str | None = None,
     timeout: int | str | None = None,
-    max_turns: int | str | None = None,
     permission_mode: str | None = None,
     model: str | None = None,
 ) -> None:
-    global ACP_EXEC_CLAUDE_PATH, ACP_EXEC_TIMEOUT, ACP_EXEC_MAX_TURNS, ACP_EXEC_PERMISSION_MODE, ACP_EXEC_MODEL
+    global ACP_EXEC_CLAUDE_PATH, ACP_EXEC_TIMEOUT, ACP_EXEC_PERMISSION_MODE, ACP_EXEC_MODEL
     if claude_path is not None:
         ACP_EXEC_CLAUDE_PATH = str(claude_path).strip() or "claude"
         os.environ["ACP_EXEC_CLAUDE_PATH"] = ACP_EXEC_CLAUDE_PATH
     if timeout is not None:
         ACP_EXEC_TIMEOUT = max(60, _parse_int(str(timeout), 900))
         os.environ["ACP_EXEC_TIMEOUT"] = str(ACP_EXEC_TIMEOUT)
-    if max_turns is not None:
-        ACP_EXEC_MAX_TURNS = max(1, _parse_int(str(max_turns), 50))
-        os.environ["ACP_EXEC_MAX_TURNS"] = str(ACP_EXEC_MAX_TURNS)
     if permission_mode is not None:
         ACP_EXEC_PERMISSION_MODE = str(permission_mode).strip() or "bypassPermissions"
         os.environ["ACP_EXEC_PERMISSION_MODE"] = ACP_EXEC_PERMISSION_MODE
@@ -222,7 +217,6 @@ def get_acp_exec_config() -> dict[str, str | int]:
     return {
         "claude_path": ACP_EXEC_CLAUDE_PATH,
         "timeout": ACP_EXEC_TIMEOUT,
-        "max_turns": ACP_EXEC_MAX_TURNS,
         "permission_mode": ACP_EXEC_PERMISSION_MODE,
         "model": ACP_EXEC_MODEL,
     }

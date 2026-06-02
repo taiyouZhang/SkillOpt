@@ -49,5 +49,4 @@ env:
     qa: 8192
   acp:
     timeout: 900
-    max_turns: 50
     permission_mode: bypassPermissions
