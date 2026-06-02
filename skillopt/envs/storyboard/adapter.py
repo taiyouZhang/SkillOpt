@@ -7,6 +7,10 @@ from skillopt.datasets.base import BatchSpec
 from skillopt.envs.base import EnvAdapter
 from skillopt.envs.storyboard.dataloader import StoryboardDataLoader
 from skillopt.envs.storyboard.rollout import run_batch
+from skillopt.envs.storyboard.pipeline import (
+    compose_skill,
+    DEFAULT_MAX_TOKENS,
+)
 from skillopt.gradient.reflect import run_minibatch_reflect
 
 
@@ -30,6 +34,9 @@ class StoryboardAdapter(EnvAdapter):
         seed: int = 42,
         limit: int = 0,
         max_completion_tokens: int = 16384,
+        pipeline_mode: str = "multi_agent",
+        skill_base_dir: str = "",
+        max_tokens_per_stage: dict | None = None,
     ) -> None:
         self.exec_timeout = exec_timeout
         self.workers = workers
@@ -38,6 +45,10 @@ class StoryboardAdapter(EnvAdapter):
         self.minibatch_size = minibatch_size
         self.edit_budget = edit_budget
         self.max_completion_tokens = int(max_completion_tokens)
+        self.pipeline_mode = pipeline_mode
+        self.skill_base_dir = skill_base_dir
+        self.max_tokens_per_stage = max_tokens_per_stage or DEFAULT_MAX_TOKENS
+        self.frozen_skills = self._load_frozen_skills(skill_base_dir)
         self.dataloader = StoryboardDataLoader(
             split_dir=split_dir,
             data_path=data_path,
@@ -49,9 +60,46 @@ class StoryboardAdapter(EnvAdapter):
             limit=limit,
         )
 
+    @staticmethod
+    def _load_frozen_skills(skill_base_dir: str) -> dict[str, str]:
+        """Load Editor/Continuity/QA skills (frozen, not optimized)."""
+        frozen = {}
+        for name in ("editor", "continuity", "qa"):
+            path = os.path.join(skill_base_dir, name, "SKILL.md")
+            if os.path.exists(path):
+                with open(path, encoding="utf-8") as f:
+                    frozen[name] = f.read()
+            else:
+                frozen[name] = ""
+        return frozen
+
+    @staticmethod
+    def compose_initial_skill(skill_base_dir: str) -> str:
+        """Compose Director+DP into a single optimizable skill string."""
+        director_path = os.path.join(skill_base_dir, "director", "SKILL.md")
+        dp_path = os.path.join(skill_base_dir, "dp", "SKILL.md")
+        director = ""
+        dp = ""
+        if os.path.exists(director_path):
+            with open(director_path, encoding="utf-8") as f:
+                director = f.read()
+        if os.path.exists(dp_path):
+            with open(dp_path, encoding="utf-8") as f:
+                dp = f.read()
+        return compose_skill(director, dp)
+
     def setup(self, cfg: dict) -> None:
         super().setup(cfg)
         self.dataloader.setup(cfg)
+        if cfg.get("skill_init") == "auto_compose" and self.skill_base_dir:
+            composite = self.compose_initial_skill(self.skill_base_dir)
+            out_root = cfg.get("out_root", ".")
+            os.makedirs(out_root, exist_ok=True)
+            composite_path = os.path.join(out_root, "composite_skill_init.md")
+            with open(composite_path, "w", encoding="utf-8") as f:
+                f.write(composite)
+            cfg["skill_init"] = composite_path
+            print(f"  [pipeline] auto-composed skill from {self.skill_base_dir} ({len(composite)} chars)")
 
     def get_dataloader(self):
         return self.dataloader
@@ -83,6 +131,9 @@ class StoryboardAdapter(EnvAdapter):
             workers=self.workers,
             max_completion_tokens=self.max_completion_tokens,
             task_timeout=self.exec_timeout + 120,
+            frozen_skills=self.frozen_skills,
+            max_tokens_per_stage=self.max_tokens_per_stage,
+            pipeline_mode=self.pipeline_mode,
         )
 
     def reflect(

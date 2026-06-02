@@ -9,26 +9,7 @@ from concurrent.futures import FIRST_COMPLETED, ThreadPoolExecutor, wait
 from skillopt.model import chat_target
 from skillopt.envs.storyboard.evaluator import evaluate
 from skillopt.envs.storyboard.hard_metrics import compute_hard_metrics
-
-
-_USER_TEMPLATE = """\
-## 剧本原文
-
-{script_text}
-
-## 任务
-
-请将上述剧本拆分为分镜头表。输出纯CSV格式（不要markdown代码块），列头为：
-分镜号,场景,画面内容,景别,拍摄角度,运镜,角色,台词
-
-要求：
-- 每行一个镜头，分镜号从0开始递增
-- "画面内容"字段要具体、视觉化、可用于AI视频生成，描述画面动作和构图
-- 景别使用：WS/FS/MFS/MS/MCU/CU/POV/OTS等
-- 拍摄角度使用：平/微俯/微仰/仰拍/俯拍/倾斜/侧等
-- 运镜使用：固定/推/拉/摇/移/手持/环绕/跟等
-- 台词字段保留原文对白，无对白则留空
-"""
+from skillopt.envs.storyboard.pipeline import run_pipeline
 
 
 def process_one(
@@ -37,8 +18,11 @@ def process_one(
     skill_content: str,
     exec_timeout: int = 300,
     max_completion_tokens: int = 16384,
+    frozen_skills: dict[str, str] | None = None,
+    max_tokens_per_stage: dict[str, int] | None = None,
+    pipeline_mode: str = "multi_agent",
 ) -> dict:
-    """Process a single storyboard item: generate CSV + evaluate."""
+    """Process a single storyboard item via multi-agent pipeline."""
     item_id = str(item["id"])
     script_text = item["script_text"]
     ground_truth_csv = item["ground_truth_csv"]
@@ -59,30 +43,42 @@ def process_one(
         pred_dir = os.path.join(out_root, "predictions", item_id)
         os.makedirs(pred_dir, exist_ok=True)
 
-        system = skill_content if skill_content.strip() else "你是专业的短剧分镜师，擅长将剧本拆分为结构化分镜头表。"
-        user = _USER_TEMPLATE.format(script_text=script_text)
-
-        response, _ = chat_target(
-            system=system,
-            user=user,
-            max_completion_tokens=max_completion_tokens,
-            retries=3,
-            stage="rollout",
-            timeout=exec_timeout,
-        )
+        if pipeline_mode == "multi_agent" and frozen_skills:
+            pipeline_result = run_pipeline(
+                script_text=script_text,
+                composite_skill=skill_content,
+                frozen_skills=frozen_skills,
+                pred_dir=pred_dir,
+                max_tokens_per_stage=max_tokens_per_stage,
+                exec_timeout=exec_timeout,
+            )
+            if not pipeline_result.success:
+                result["fail_reason"] = f"pipeline error: {pipeline_result.error}"
+                return result
+            response = pipeline_result.final_csv
+        else:
+            system = skill_content if skill_content.strip() else "你是专业的短剧分镜师，擅长将剧本拆分为结构化分镜头表。"
+            user = f"## 剧本原文\n\n{script_text}\n\n## 任务\n\n请将上述剧本拆分为分镜头表。输出纯CSV格式。"
+            response, _ = chat_target(
+                system=system, user=user,
+                max_completion_tokens=max_completion_tokens,
+                retries=3, stage="rollout", timeout=exec_timeout,
+            )
+            with open(os.path.join(pred_dir, "system_prompt.txt"), "w", encoding="utf-8") as f:
+                f.write(system)
+            with open(os.path.join(pred_dir, "user_prompt.txt"), "w", encoding="utf-8") as f:
+                f.write(user)
 
         result["response"] = response
 
-        with open(os.path.join(pred_dir, "system_prompt.txt"), "w", encoding="utf-8") as f:
-            f.write(system)
-        with open(os.path.join(pred_dir, "user_prompt.txt"), "w", encoding="utf-8") as f:
-            f.write(user)
         with open(os.path.join(pred_dir, "response.txt"), "w", encoding="utf-8") as f:
             f.write(response)
+        with open(os.path.join(pred_dir, "system_prompt.txt"), "w", encoding="utf-8") as f:
+            f.write(skill_content)
+        with open(os.path.join(pred_dir, "user_prompt.txt"), "w", encoding="utf-8") as f:
+            f.write(script_text)
 
-        # Hard metrics (automated, used for gate)
         hard_result = compute_hard_metrics(script_text, response, ground_truth_csv)
-        # LLM judge (soft signal for analyst)
         eval_result = evaluate(script_text, response, ground_truth_csv, timeout=exec_timeout)
 
         result["hard"] = hard_result["hard_score"]
@@ -99,9 +95,10 @@ def process_one(
 
         if not hard_result.get("parse_ok", True):
             result["fail_reason"] = "CSV parse failure"
-        elif hard_result["hard_score"] < 0.5:
+        elif eval_result["soft"] < 0.82:
             result["fail_reason"] = (
-                f"Hard metrics below threshold: "
+                f"Soft score below threshold (0.82): soft={eval_result['soft']:.2f} "
+                f"hard={hard_result['hard_score']:.2f} "
                 f"count_dev={hard_result['shot_count_deviation']:.2f} "
                 f"cut_align={hard_result['cut_alignment_rate']:.2f} "
                 f"scale_edit={hard_result['shot_scale_edit_dist']:.2f}"
@@ -125,6 +122,9 @@ def run_batch(
     workers: int = 2,
     max_completion_tokens: int = 16384,
     task_timeout: int = 600,
+    frozen_skills: dict[str, str] | None = None,
+    max_tokens_per_stage: dict[str, int] | None = None,
+    pipeline_mode: str = "multi_agent",
     **kwargs,
 ) -> list[dict]:
     """Run storyboard generation on all items. Resume-aware."""
@@ -159,7 +159,12 @@ def run_batch(
 
     def _run_one(item: dict) -> dict:
         started_at[str(item["id"])] = time.time()
-        return process_one(item, out_root, skill_content, exec_timeout, max_completion_tokens)
+        return process_one(
+            item, out_root, skill_content, exec_timeout, max_completion_tokens,
+            frozen_skills=frozen_skills,
+            max_tokens_per_stage=max_tokens_per_stage,
+            pipeline_mode=pipeline_mode,
+        )
 
     def _timeout_result(item: dict) -> dict:
         return {

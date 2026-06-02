@@ -6,9 +6,34 @@
 
 ## 1. 任务概述
 
-Storyboard 任务：给定一段短剧剧本文本，生成结构化分镜头表（CSV格式），包含镜号、画面内容、景别、拍摄角度、运镜、角色、台词等字段。
+Storyboard 任务：给定一段短剧剧本文本，通过多Agent串行协作生成结构化分镜头表（CSV格式），包含镜号、画面内容、景别、拍摄角度、运镜、角色、台词等字段。
 
-训练目标：通过 SkillOpt 循环优化一份 Skill 文档，使 target 模型生成的分镜表在结构与专业度上逼近导演人工标注。
+训练目标：通过 SkillOpt 循环优化 Director 和 DP 两个 Agent 的 Skill 文档，使多Agent流水线生成的分镜表在结构与专业度上逼近导演人工标注。
+
+### 1.1 多Agent Pipeline 架构
+
+训练的 rollout 阶段执行与真实场景一致的 5-agent 串行流水线：
+
+```
+剧本 → Director（分析+决策）→ director_notes
+         → DP（设计镜头）→ dp_draft.csv
+            → Editor（优化节奏）→ editor_cut.csv
+               → Continuity（格式检查）→ continuity_checked.csv
+                  → QA（内容质检）→ final.csv
+```
+
+**优化范围**：仅优化 Director + DP 的 SKILL.md（它们决定切点、镜头数、景别序列）。Editor/Continuity/QA 冻结不动。
+
+**Skill 表示**：Director 和 DP 的内容拼接为带标记的单字符串，供 SkillOpt 优化器操作：
+```
+<!-- SKILLFILE:director START -->
+{director skill content}
+<!-- SKILLFILE:director END -->
+
+<!-- SKILLFILE:dp START -->
+{dp skill content}
+<!-- SKILLFILE:dp END -->
+```
 
 ---
 
@@ -20,12 +45,12 @@ Storyboard 任务：给定一段短剧剧本文本，生成结构化分镜头表
 |------|------|
 | `__init__.py` | 包声明 |
 | `dataloader.py` | `StoryboardDataLoader` — 从 `items.json` 加载 train/val/test split |
-| `adapter.py` | `StoryboardAdapter(EnvAdapter)` — 对接 SkillOpt 训练循环 |
-| `rollout.py` | 调 target 模型生成分镜 CSV，再分别计算 hard/soft 分数 |
+| `adapter.py` | `StoryboardAdapter(EnvAdapter)` — 对接 SkillOpt 训练循环，加载冻结skills |
+| `pipeline.py` | 5-agent串行流水线：Director→DP→Editor→Continuity→QA |
+| `rollout.py` | 调用pipeline生成分镜CSV，再分别计算 hard/soft 分数 |
 | `evaluator.py` | LLM-as-judge 评分（5维度百分制），产出 soft score |
 | `hard_metrics.py` | 纯算法硬指标：镜头数偏差、切点对齐率、景别编辑距离 |
-| `prompts/rollout_system.md` | target 模型的 system prompt 模板 |
-| `prompts/analyst_error.md` | 失败样本反思 prompt |
+| `prompts/analyst_error.md` | 失败样本反思 prompt（含多Agent架构说明） |
 | `prompts/analyst_success.md` | 成功样本反思 prompt |
 
 ### 2.2 评分体系
@@ -44,12 +69,13 @@ Storyboard 任务：给定一段短剧剧本文本，生成结构化分镜头表
 
 5个维度各 0-100：beat_pacing, shot_progression, camera_movement, ai_gen_quality, script_fidelity。overall 百分制映射到 [0,1]。
 
-训练循环中 hard_score 用于 gate（pass/fail），soft score 作为优化信号的辅助参考。
+训练循环中 soft score 用于 gate（pass/fail），hard_score 作为辅助参考。
 
 **Gate 逻辑（rollout.py）：**
 
-- `hard_score < 0.5` → 标记为失败（`fail_reason` 被设置），触发 analyst 反思
+- `soft < 0.82` → 标记为失败（`fail_reason` 被设置），触发 analyst 反思
 - CSV 解析失败 → 直接标记失败
+- Pipeline 某stage执行失败 → 直接标记失败
 - 否则视为通过
 
 注意：`result["hard"]` 为连续值 0-1（非二值），`compute_score` 会对 batch 内所有样本的 hard_score 取均值作为整体 hard accuracy。
@@ -82,9 +108,15 @@ LLM judge 偶尔因 `max_completion_tokens` 限制导致 JSON 响应被截断。
 ```
 
 每个样本的详细输出保存在 `predictions/{id}/`：
-- `system_prompt.txt` — 实际发给 target 的 system prompt
-- `user_prompt.txt` — user prompt
-- `response.txt` — 模型原始输出
+- `conversation.json` — 5-stage pipeline执行trace（供analyst读取）
+- `director_system.txt` / `director_input.txt` / `director_output.txt` — Director agent
+- `dp_system.txt` / `dp_input.txt` / `dp_output.txt` — DP agent
+- `editor_output.txt` — Editor agent（冻结）
+- `continuity_output.txt` — Continuity agent（冻结）
+- `qa_output.txt` — QA agent（冻结）
+- `response.txt` — 最终CSV输出（= qa_output）
+- `system_prompt.txt` — composite skill（供reflect读取）
+- `user_prompt.txt` — 原始剧本
 - `eval_result.json` — 完整评分（含 hard_metrics + LLM judge）
 
 ### 2.4 Claude CLI Backend 适配
@@ -157,7 +189,7 @@ _ENV_REGISTRY["storyboard"] = StoryboardAdapter
 
 1. Python 环境已安装 SkillOpt 依赖：`pip install -e .`
 2. Claude CLI 已安装且在 PATH 上（`npm install -g @anthropic-ai/claude-code`）
-3. 准备好初始 Skill 文件，路径配置在 `configs/storyboard/default.yaml` 的 `env.skill_init`
+3. 多Agent skill目录已准备好（含 director/SKILL.md、dp/SKILL.md、editor/SKILL.md、continuity/SKILL.md、qa/SKILL.md），路径配置在 `configs/storyboard/default.yaml` 的 `env.skill_base_dir`
 
 ### 3.2 启动命令
 
@@ -183,24 +215,38 @@ model:
   target: "global.anthropic.claude-opus-4-6-v1[1m]"
 
 train:
-  num_epochs: 6        # 训练轮数
+  num_epochs: 2        # 训练轮数（先验证有效性）
   batch_size: 2        # 每 step 样本数（数据集小，设为2）
   accumulation: 2      # 梯度累积步数
 
 env:
   name: storyboard
-  skill_init: "path/to/initial/SKILL.md"   # 初始 skill 文件
+  skill_init: auto_compose                  # 自动从 skill_base_dir 合成
+  skill_base_dir: "path/to/script-to-shots" # 多Agent skill目录
+  pipeline_mode: multi_agent                # multi_agent | single_call
   split_mode: split_dir
   split_dir: data/storyboard_split          # 数据目录
   workers: 2                                # rollout 并发数
   max_completion_tokens: 16384              # target 模型最大输出 token
   exec_timeout: 300                         # 单次调用超时（秒）
+  max_tokens_per_stage:                     # 每个agent的token上限
+    director: 4096
+    dp: 8192
+    editor: 8192
+    continuity: 8192
+    qa: 8192
 
 optimizer:
   learning_rate: 3          # 每步最大编辑数
   use_slow_update: true     # epoch 边界做 slow update
   use_meta_skill: true      # 跨 epoch 记忆
 ```
+
+**Pipeline 模式说明**：
+- `multi_agent`：执行完整的 5-agent 串行流水线（推荐）
+- `single_call`：退化为单次 API 调用（向后兼容，仅用于对比实验）
+
+**skill_init: auto_compose**：训练启动时自动将 `skill_base_dir/director/SKILL.md` 和 `skill_base_dir/dp/SKILL.md` 合成为带标记的单字符串，供优化器操作。
 
 ### 3.4 验证 GT baseline
 
