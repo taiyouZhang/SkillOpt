@@ -80,7 +80,18 @@ def _extract_json(text: str) -> dict | None:
     try:
         return json.loads(text.strip())
     except json.JSONDecodeError:
-        return None
+        pass
+    # Fallback: extract numeric fields from truncated JSON
+    fields = ("beat_pacing", "shot_progression", "camera_movement", "ai_gen_quality", "script_fidelity", "overall")
+    result = {}
+    for field in fields:
+        m = re.search(rf'"{field}"\s*:\s*(\d+)', text)
+        if m:
+            result[field] = int(m.group(1))
+    reasoning_m = re.search(r'"reasoning"\s*:\s*"(.*?)(?:"|$)', text, re.DOTALL)
+    if reasoning_m:
+        result["reasoning"] = reasoning_m.group(1)
+    return result if "overall" in result else None
 
 
 def _parse_csv(csv_text: str) -> list[dict] | None:

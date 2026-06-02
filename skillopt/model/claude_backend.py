@@ -14,7 +14,7 @@ from urllib.parse import unquote, urlparse
 
 from skillopt.model.common import CompatAssistantMessage, CompatToolCall, CompatToolFunction, default_model_for_backend, tracker
 
-CLAUDE_BIN = os.environ.get("CLAUDE_CLI_BIN", "claude")
+CLAUDE_BIN = os.environ.get("CLAUDE_CLI_BIN") or shutil.which("claude") or "claude"
 CLAUDE_PERMISSION_MODE = os.environ.get("CLAUDE_PERMISSION_MODE", "dontAsk")
 CLAUDE_SETTING_SOURCES = os.environ.get("CLAUDE_SETTING_SOURCES", "user,project")
 CLAUDE_ALLOW_ATTACHMENT_READ = os.environ.get("CLAUDE_ALLOW_ATTACHMENT_READ", "1").strip().lower() not in {"0", "false", "no"}
