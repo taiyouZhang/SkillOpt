@@ -10,6 +10,7 @@ from __future__ import annotations
 import csv
 import io
 import re
+from difflib import SequenceMatcher
 
 
 # ---------------------------------------------------------------------------
@@ -90,16 +91,17 @@ def _find_sentence_index(sentences: list[str], text: str) -> int:
         return -1
     text_lower = text.strip().lower()
     best_idx = -1
-    best_overlap = 0
+    best_ratio = 0.0
     for i, sent in enumerate(sentences):
         sent_lower = sent.lower()
-        overlap = len(set(text_lower) & set(sent_lower))
         if text_lower in sent_lower or sent_lower in text_lower:
-            overlap = max(overlap, len(text_lower))
-        if overlap > best_overlap:
-            best_overlap = overlap
+            ratio = max(len(min(text_lower, sent_lower, key=len)) / max(len(text_lower), len(sent_lower), 1), 0.6)
+        else:
+            ratio = SequenceMatcher(None, text_lower, sent_lower).ratio()
+        if ratio > best_ratio:
+            best_ratio = ratio
             best_idx = i
-    if best_overlap < 3:
+    if best_ratio < 0.3:
         return -1
     return best_idx
 
