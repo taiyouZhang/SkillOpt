@@ -21,6 +21,7 @@ def process_one(
     frozen_skills: dict[str, str] | None = None,
     max_tokens_per_stage: dict[str, int] | None = None,
     pipeline_mode: str = "multi_agent",
+    skill_base_dir: str = "",
 ) -> dict:
     """Process a single storyboard item via multi-agent pipeline."""
     item_id = str(item["id"])
@@ -53,11 +54,13 @@ def process_one(
                 work_dir=work_dir,
                 script_text=script_text,
                 all_skills=all_skills,
+                skill_base_dir=skill_base_dir,
             )
             response, _ = run_acp_pipeline(
                 script_text=script_text,
                 all_skills=all_skills,
                 work_dir=work_dir,
+                skill_base_dir=skill_base_dir,
                 timeout=exec_timeout,
             )
             if not response.strip():
@@ -145,6 +148,7 @@ def run_batch(
     frozen_skills: dict[str, str] | None = None,
     max_tokens_per_stage: dict[str, int] | None = None,
     pipeline_mode: str = "multi_agent",
+    skill_base_dir: str = "",
     **kwargs,
 ) -> list[dict]:
     """Run storyboard generation on all items. Resume-aware."""
@@ -184,6 +188,7 @@ def run_batch(
             frozen_skills=frozen_skills,
             max_tokens_per_stage=max_tokens_per_stage,
             pipeline_mode=pipeline_mode,
+            skill_base_dir=skill_base_dir,
         )
 
     def _timeout_result(item: dict) -> dict:

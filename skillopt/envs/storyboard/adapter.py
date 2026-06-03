@@ -134,6 +134,7 @@ class StoryboardAdapter(EnvAdapter):
             frozen_skills=self.frozen_skills,
             max_tokens_per_stage=self.max_tokens_per_stage,
             pipeline_mode=self.pipeline_mode,
+            skill_base_dir=self.skill_base_dir,
         )
 
     def reflect(

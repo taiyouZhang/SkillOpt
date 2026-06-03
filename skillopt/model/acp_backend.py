@@ -22,11 +22,26 @@ _CLAUDE_MD_TEMPLATE = """\
 
 You are executing a 5-stage storyboard generation pipeline. Follow these steps exactly in order.
 
+## Workspace Structure
+
+```
+.agents/skills/
+├── SKILL.md              # Top-level orchestration skill (read first for overview)
+├── CONTRACT.md           # Input/output contract spec
+├── director/SKILL.md     # Stage 1 skill
+├── dp/SKILL.md           # Stage 2 skill
+├── editor/SKILL.md       # Stage 3 skill
+├── continuity/SKILL.md   # Stage 4 skill
+├── qa/SKILL.md           # Stage 5 skill
+├── references/           # Shared references (director styles, templates, gotchas, etc.)
+└── scripts/              # Helper scripts (if any)
+```
+
 ## Pipeline Stages
 
-1. **Director** — Read `.agents/skills/director/SKILL.md` as your working guide. Read `script.txt` as input. Produce director notes (scene intent, narrative beats, shot density decisions, camera strategy). Write output to `output/director_notes.md`.
+1. **Director** — Read `.agents/skills/director/SKILL.md` as your working guide. Read `script.txt` as input. Reference files under `.agents/skills/references/` as needed (director styles, gotchas, etc.). Produce director notes (scene intent, narrative beats, shot density decisions, camera strategy). Write output to `output/director_notes.md`.
 
-2. **DP (Director of Photography)** — Read `.agents/skills/dp/SKILL.md` as your working guide. Using your director notes + the original script, design concrete shots as pure CSV. Write output to `output/dp_draft.csv`. CSV columns: 镜头号,分镜组,场景,中文台词,英文台词,Prompt,时长,景别,视角,运镜,角色,道具,音效
+2. **DP (Director of Photography)** — Read `.agents/skills/dp/SKILL.md` as your working guide. Using your director notes + the original script, reference `.agents/skills/references/` for prompt templates, schema, and examples. Design concrete shots as pure CSV. Write output to `output/dp_draft.csv`. CSV columns: 镜头号,分镜组,场景,中文台词,英文台词,Prompt,时长,景别,视角,运镜,角色,道具,音效
 
 3. **Editor** — Read `.agents/skills/editor/SKILL.md` as your working guide. Optimize the DP draft for pacing, remove redundancy, add missing reaction shots. Write output to `output/editor_cut.csv`.
 
@@ -41,6 +56,7 @@ You are executing a 5-stage storyboard generation pipeline. Follow these steps e
 - Write intermediate outputs to the specified files in `output/`.
 - The final deliverable is `output/final.csv`.
 - CSV output must be pure CSV (no markdown code blocks), with the header row specified above.
+- Reference `.agents/skills/references/` for shared knowledge (director styles, prompt templates, schema, examples, gotchas).
 - Do not ask for permission or clarification. Execute autonomously.
 """
 
@@ -53,8 +69,14 @@ def prepare_acp_workspace(
     work_dir: str,
     script_text: str,
     all_skills: dict[str, str],
+    skill_base_dir: str = "",
 ) -> str:
     """Create a workspace directory with script, skills, and instructions.
+
+    If skill_base_dir is provided, copies the entire skill directory tree
+    (references/, scripts/, CONTRACT.md, top-level SKILL.md, etc.) into
+    the workspace, then overlays the optimized skill content on top of
+    the director/dp SKILL.md files.
 
     Returns the workspace root path.
     """
@@ -70,10 +92,17 @@ def prepare_acp_workspace(
     with open(os.path.join(work_dir, "CLAUDE.md"), "w", encoding="utf-8") as f:
         f.write(_CLAUDE_MD_TEMPLATE)
 
+    skill_dest = os.path.join(work_dir, ".agents", "skills")
+
+    if skill_base_dir and os.path.isdir(skill_base_dir):
+        shutil.copytree(skill_base_dir, skill_dest, dirs_exist_ok=True)
+    else:
+        os.makedirs(skill_dest, exist_ok=True)
+
     for stage_name, skill_content in all_skills.items():
-        skill_dir = os.path.join(work_dir, ".agents", "skills", stage_name)
-        os.makedirs(skill_dir, exist_ok=True)
-        with open(os.path.join(skill_dir, "SKILL.md"), "w", encoding="utf-8") as f:
+        stage_dir = os.path.join(skill_dest, stage_name)
+        os.makedirs(stage_dir, exist_ok=True)
+        with open(os.path.join(stage_dir, "SKILL.md"), "w", encoding="utf-8") as f:
             f.write(skill_content)
 
     return work_dir
@@ -106,6 +135,7 @@ def run_acp_pipeline(
     script_text: str,
     all_skills: dict[str, str],
     work_dir: str,
+    skill_base_dir: str = "",
     model: str = "",
     timeout: int = 0,
 ) -> tuple[str, str]:
@@ -119,6 +149,9 @@ def run_acp_pipeline(
     """
     config = get_acp_exec_config()
     claude_path = str(config["claude_path"])
+    resolved = shutil.which(claude_path)
+    if resolved:
+        claude_path = resolved
     actual_model = model or str(config.get("model", ""))
     actual_timeout = timeout or int(config["timeout"])
     permission_mode = str(config["permission_mode"])
@@ -140,13 +173,18 @@ def run_acp_pipeline(
     )
     cmd.extend(["--", prompt_text])
 
+    env = os.environ.copy()
+    env["PYTHONIOENCODING"] = "utf-8"
     try:
         proc = subprocess.run(
             cmd,
             cwd=work_dir,
             capture_output=True,
             text=True,
+            encoding="utf-8",
+            errors="replace",
             timeout=actual_timeout,
+            env=env,
         )
     except subprocess.TimeoutExpired as exc:
         stdout = exc.stdout or ""
