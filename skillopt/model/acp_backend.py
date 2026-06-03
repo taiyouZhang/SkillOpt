@@ -47,14 +47,14 @@ You are executing a 5-stage storyboard generation pipeline. Follow these steps e
 
 4. **Continuity** — Read `.agents/skills/continuity/SKILL.md` as your working guide. Validate format, numbering continuity, field completeness. Write output to `output/continuity_checked.csv`.
 
-5. **QA** — Read `.agents/skills/qa/SKILL.md` as your working guide. Final quality check: remove metaphor pollution, isolate non-visual content, verify OTS precision. Write output to `output/final.csv`.
+5. **QA** — Read `.agents/skills/qa/SKILL.md` as your working guide. Final quality check: remove metaphor pollution, isolate non-visual content, verify OTS precision. Write output to `output/storyboard.csv`.
 
 ## Rules
 
 - Execute ALL 5 stages sequentially. Do not skip any stage.
 - Each stage's output feeds into the next stage as input.
 - Write intermediate outputs to the specified files in `output/`.
-- The final deliverable is `output/final.csv`.
+- The final deliverable is `output/storyboard.csv`.
 - CSV output must be pure CSV (no markdown code blocks), with the header row specified above.
 - Reference `.agents/skills/references/` for shared knowledge (director styles, prompt templates, schema, examples, gotchas).
 - Do not ask for permission or clarification. Execute autonomously.
@@ -126,7 +126,7 @@ def collect_stage_outputs(work_dir: str) -> dict[str, str]:
         "dp": _read_output_file(work_dir, "dp_draft.csv"),
         "editor": _read_output_file(work_dir, "editor_cut.csv"),
         "continuity": _read_output_file(work_dir, "continuity_checked.csv"),
-        "final": _read_output_file(work_dir, "final.csv"),
+        "final": _read_output_file(work_dir, "storyboard.csv"),
     }
 
 
@@ -197,7 +197,7 @@ def run_acp_pipeline(
             "stdout_chars": len(stdout),
             "stderr": stderr[:2000],
         }, ensure_ascii=False)
-        final_csv = _read_output_file(work_dir, "final.csv")
+        final_csv = _read_output_file(work_dir, "storyboard.csv")
         _persist_raw(work_dir, raw)
         return final_csv, raw
     except Exception as exc:
@@ -214,7 +214,7 @@ def run_acp_pipeline(
     stdout = proc.stdout or ""
     stderr = proc.stderr or ""
 
-    final_csv = _read_output_file(work_dir, "final.csv")
+    final_csv = _read_output_file(work_dir, "storyboard.csv")
     if not final_csv.strip():
         final_csv = stdout.strip()
 
