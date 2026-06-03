@@ -30,6 +30,7 @@ CLAUDE_CODE_EXEC_USE_SDK = os.environ.get("CLAUDE_CODE_EXEC_USE_SDK", "auto")
 CLAUDE_CODE_EXEC_EFFORT = os.environ.get("CLAUDE_CODE_EXEC_EFFORT", "medium")
 
 
+
 def _parse_int(value: str | None, default: int) -> int:
     if value is None:
         return default
@@ -38,6 +39,11 @@ def _parse_int(value: str | None, default: int) -> int:
     except ValueError:
         return default
 
+
+ACP_EXEC_CLAUDE_PATH = os.environ.get("ACP_EXEC_CLAUDE_PATH", "claude")
+ACP_EXEC_TIMEOUT = _parse_int(os.environ.get("ACP_EXEC_TIMEOUT"), 900)
+ACP_EXEC_PERMISSION_MODE = os.environ.get("ACP_EXEC_PERMISSION_MODE", "bypassPermissions")
+ACP_EXEC_MODEL = os.environ.get("ACP_EXEC_MODEL", "")
 
 EXEC_EMPTY_RESPONSE_RETRIES = max(0, _parse_int(os.environ.get("EXEC_EMPTY_RESPONSE_RETRIES"), 1))
 CLAUDE_CODE_EXEC_MAX_THINKING_TOKENS = max(
@@ -64,10 +70,10 @@ def get_optimizer_backend() -> str:
 def set_target_backend(backend: str) -> None:
     global TARGET_BACKEND
     TARGET_BACKEND = normalize_backend_name(backend or "openai_chat")
-    if TARGET_BACKEND not in {"openai_chat", "claude_chat", "qwen_chat", "minimax_chat", "codex_exec", "claude_code_exec"}:
+    if TARGET_BACKEND not in {"openai_chat", "claude_chat", "qwen_chat", "minimax_chat", "codex_exec", "claude_code_exec", "acp_exec"}:
         raise ValueError(
             f"Unsupported target backend: {TARGET_BACKEND!r}. "
-            "Supported values are 'openai_chat', 'claude_chat', 'qwen_chat', 'minimax_chat', 'codex_exec', and 'claude_code_exec'."
+            "Supported values are 'openai_chat', 'claude_chat', 'qwen_chat', 'minimax_chat', 'codex_exec', 'claude_code_exec', and 'acp_exec'."
         )
     os.environ["TARGET_BACKEND"] = TARGET_BACKEND
 
@@ -77,7 +83,7 @@ def get_target_backend() -> str:
 
 
 def is_target_exec_backend() -> bool:
-    return TARGET_BACKEND in {"codex_exec", "claude_code_exec"}
+    return TARGET_BACKEND in {"codex_exec", "claude_code_exec", "acp_exec"}
 
 
 def is_optimizer_chat_backend() -> bool:
@@ -182,4 +188,35 @@ def get_claude_code_exec_config() -> dict[str, str | int]:
         "effort": CLAUDE_CODE_EXEC_EFFORT,
         "max_thinking_tokens": CLAUDE_CODE_EXEC_MAX_THINKING_TOKENS,
         "empty_response_retries": EXEC_EMPTY_RESPONSE_RETRIES,
+    }
+
+
+def configure_acp_exec(
+    *,
+    claude_path: str | None = None,
+    timeout: int | str | None = None,
+    permission_mode: str | None = None,
+    model: str | None = None,
+) -> None:
+    global ACP_EXEC_CLAUDE_PATH, ACP_EXEC_TIMEOUT, ACP_EXEC_PERMISSION_MODE, ACP_EXEC_MODEL
+    if claude_path is not None:
+        ACP_EXEC_CLAUDE_PATH = str(claude_path).strip() or "claude"
+        os.environ["ACP_EXEC_CLAUDE_PATH"] = ACP_EXEC_CLAUDE_PATH
+    if timeout is not None:
+        ACP_EXEC_TIMEOUT = max(60, _parse_int(str(timeout), 900))
+        os.environ["ACP_EXEC_TIMEOUT"] = str(ACP_EXEC_TIMEOUT)
+    if permission_mode is not None:
+        ACP_EXEC_PERMISSION_MODE = str(permission_mode).strip() or "bypassPermissions"
+        os.environ["ACP_EXEC_PERMISSION_MODE"] = ACP_EXEC_PERMISSION_MODE
+    if model is not None:
+        ACP_EXEC_MODEL = str(model).strip()
+        os.environ["ACP_EXEC_MODEL"] = ACP_EXEC_MODEL
+
+
+def get_acp_exec_config() -> dict[str, str | int]:
+    return {
+        "claude_path": ACP_EXEC_CLAUDE_PATH,
+        "timeout": ACP_EXEC_TIMEOUT,
+        "permission_mode": ACP_EXEC_PERMISSION_MODE,
+        "model": ACP_EXEC_MODEL,
     }

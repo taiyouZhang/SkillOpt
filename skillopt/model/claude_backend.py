@@ -14,7 +14,7 @@ from urllib.parse import unquote, urlparse
 
 from skillopt.model.common import CompatAssistantMessage, CompatToolCall, CompatToolFunction, default_model_for_backend, tracker
 
-CLAUDE_BIN = os.environ.get("CLAUDE_CLI_BIN", "claude")
+CLAUDE_BIN = os.environ.get("CLAUDE_CLI_BIN") or shutil.which("claude") or "claude"
 CLAUDE_PERMISSION_MODE = os.environ.get("CLAUDE_PERMISSION_MODE", "dontAsk")
 CLAUDE_SETTING_SOURCES = os.environ.get("CLAUDE_SETTING_SOURCES", "user,project")
 CLAUDE_ALLOW_ATTACHMENT_READ = os.environ.get("CLAUDE_ALLOW_ATTACHMENT_READ", "1").strip().lower() not in {"0", "false", "no"}
@@ -252,17 +252,22 @@ def _run_claude_print(*, system: str, prompt: str, model: str, tools: list[dict[
         if CLAUDE_SETTING_SOURCES:
             cmd.extend(["--setting-sources", CLAUDE_SETTING_SOURCES])
         if system:
-            cmd.extend(["--append-system-prompt", system])
+            system_file = os.path.join(temp_dir, "_system_prompt.txt")
+            with open(system_file, "w", encoding="utf-8") as sf:
+                sf.write(system)
+            cmd.extend(["--append-system-prompt-file", system_file])
         if effort:
             cmd.extend(["--effort", effort])
         structured_output = bool(return_message)
         if structured_output:
             cmd.extend(["--schema", _assistant_message_schema_wrapper()])
-        proc = subprocess.run(cmd + [prompt_for_cli], capture_output=True, text=True, timeout=timeout or 300, cwd=temp_dir)
+        proc = subprocess.run(cmd, input=prompt_for_cli, capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=timeout or 300, cwd=temp_dir)
         stderr_text = (proc.stderr or "").strip()
         if proc.returncode != 0:
-            _check_claude_error(stderr_text, model)
-            raise RuntimeError(stderr_text or f"Claude CLI exited with code {proc.returncode}")
+            stdout_text = (proc.stdout or "").strip()
+            combined = stderr_text or stdout_text or f"Claude CLI exited with code {proc.returncode}"
+            _check_claude_error(combined, model)
+            raise RuntimeError(combined[:500])
         stream = []
         for raw_line in (proc.stdout or "").splitlines():
             raw_line = raw_line.strip()

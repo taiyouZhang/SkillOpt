@@ -1,0 +1,53 @@
+_base_: ../_base_/default.yaml
+
+model:
+  optimizer_backend: claude_chat
+  target_backend: claude_chat
+  optimizer: "global.anthropic.claude-opus-4-6-v1[1m]"
+  target: "global.anthropic.claude-opus-4-6-v1[1m]"
+  reasoning_effort: medium
+
+train:
+  num_epochs: 6
+  batch_size: 10
+  accumulation: 1
+  seed: 42
+
+gradient:
+  minibatch_size: 2
+  merge_batch_size: 2
+  analyst_workers: 2
+
+optimizer:
+  learning_rate: 3
+  min_learning_rate: 1
+  lr_scheduler: cosine
+  skill_update_mode: patch
+  use_slow_update: true
+  use_meta_skill: true
+
+evaluation:
+  use_gate: true
+  gate_metric: soft
+  eval_test: false
+
+env:
+  name: storyboard
+  skill_init: auto_compose
+  skill_base_dir: "C:/Users/44820/Documents/project/20260601_剧本分镜拆分/Agent-Skills/skills/script-to-shots"
+  pipeline_mode: acp
+  split_mode: split_dir
+  split_dir: data/storyboard_split
+  workers: 3
+  max_completion_tokens: 16384
+  exec_timeout: 600
+  limit: 0
+  max_tokens_per_stage:
+    director: 4096
+    dp: 8192
+    editor: 8192
+    continuity: 8192
+    qa: 8192
+  acp:
+    timeout: 900
+    permission_mode: bypassPermissions
