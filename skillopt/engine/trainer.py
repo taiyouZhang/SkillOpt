@@ -61,7 +61,7 @@ from skillopt.model import (
     set_optimizer_backend,
     set_optimizer_deployment,
 )
-from skillopt.utils import compute_score, skill_hash
+from skillopt.utils import compute_score, is_anomalous, skill_hash
 
 
 # ── Patch normalization ───────────────────────────────────────────────────────
@@ -394,7 +394,11 @@ def _extract_failure_patterns(
     Uses analyst ``failure_summary`` from minibatch patches when available,
     otherwise falls back to ``fail_reason`` prefix grouping.
     """
-    failures = [r for r in rollout_results if not r.get("hard") or float(r.get("hard", 0)) < 1e-9]
+    failures = [
+        r for r in rollout_results
+        if (not r.get("hard") or float(r.get("hard", 0)) < 1e-9)
+        and not is_anomalous(r)
+    ]
     if not failures:
         return []
 
@@ -1033,9 +1037,11 @@ class ReflACTTrainer:
                         use_eval_feedback=True,
                     )
                     r_hard, r_soft = compute_score(rollout_results)
+                    n_anom = sum(1 for r in rollout_results if is_anomalous(r))
                     total_rollout_time += time.time() - t_phase
                     all_rollout_results.extend(rollout_results)
-                    print(f"    [1/6 done] hard={r_hard:.4f} soft={r_soft:.4f}")
+                    anom_tag = f" (excluded {n_anom} anomalous)" if n_anom else ""
+                    print(f"    [1/6 done] hard={r_hard:.4f} soft={r_soft:.4f}{anom_tag}")
 
                     # ② REFLECT ────────────────────────────────────────────
                     t_phase = time.time()
@@ -1394,8 +1400,9 @@ class ReflACTTrainer:
 
                 # ── Step buffer: unified failure patterns + rejected edits ─
                 action = step_rec.get("action", "unknown")
-                n_total = len(all_rollout_results) or 1
-                n_fail = sum(1 for r in all_rollout_results if not r.get("hard") or float(r.get("hard", 0)) < 1e-9)
+                valid_results = [r for r in all_rollout_results if not is_anomalous(r)]
+                n_total = len(valid_results) or 1
+                n_fail = sum(1 for r in valid_results if not r.get("hard") or float(r.get("hard", 0)) < 1e-9)
                 failure_patterns = _extract_failure_patterns(
                     all_rollout_results, step_dir,
                 )

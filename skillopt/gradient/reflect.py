@@ -38,7 +38,7 @@ from skillopt.optimizer.update_modes import (
     truncate_payload,
 )
 from skillopt.prompts import load_prompt
-from skillopt.utils import extract_json
+from skillopt.utils import extract_json, is_anomalous
 
 
 # ── Trajectory formatting ────────────────────────────────────────────────────
@@ -489,9 +489,15 @@ def run_minibatch_reflect(
     """
     os.makedirs(patches_dir, exist_ok=True)
 
+    # Filter out anomalous results (timeouts, errors) before analysis
+    valid_results = [r for r in results if not is_anomalous(r)]
+    n_anomalous = len(results) - len(valid_results)
+    if n_anomalous:
+        print(f"      [reflect] filtered {n_anomalous} anomalous sample(s) (timeout/error)")
+
     # Separate failure / success
-    failures = [r for r in results if not r.get("hard") or float(r.get("hard", 0)) < 1e-9]
-    successes = [r for r in results if r.get("hard")] if not failure_only else []
+    failures = [r for r in valid_results if not r.get("hard") or float(r.get("hard", 0)) < 1e-9]
+    successes = [r for r in valid_results if r.get("hard")] if not failure_only else []
 
     failures = _shuffle_for_minibatch(failures, random_seed)
     successes = _shuffle_for_minibatch(successes, None if random_seed is None else random_seed + 1)
